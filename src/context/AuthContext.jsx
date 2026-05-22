@@ -29,7 +29,7 @@ export const AuthProvider = ({ children }) => {
         setUser(JSON.parse(storedUser));
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
-      
+
       await fetchSettings();
       setLoading(false);
     };
@@ -45,6 +45,15 @@ export const AuthProvider = ({ children }) => {
     setUser(user);
   };
 
+  const ssoLogin = async (demouser, ssoToken) => {
+    const res = await axios.post(`${API_BASE_URL}/auth/sso-login`, { email: demouser, sso_token: ssoToken });
+    const { token, user } = res.data;
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(user));
+    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    setUser(user);
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -53,7 +62,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, settings, refreshSettings: fetchSettings }}>
+    <AuthContext.Provider value={{ user, login, ssoLogin, logout, loading, settings, refreshSettings: fetchSettings }}>
       {children}
     </AuthContext.Provider>
   );

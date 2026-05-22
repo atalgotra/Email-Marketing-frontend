@@ -75,7 +75,7 @@ const Dashboard = () => {
       <header style={{ marginBottom: '2.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
         <div>
           <h1 style={{ fontSize: '2.2rem', fontWeight: 800, marginBottom: '0.5rem', letterSpacing: '-0.02em' }}>
-            Welcome back, <span className="gradient-text">{user?.email.split('@')[0].charAt(0).toUpperCase() + user?.email.split('@')[0].slice(1)}</span>
+            Welcome back, <span className="gradient-text">{user?.name || (user?.email?.split('@')[0]?.charAt(0)?.toUpperCase() + user?.email?.split('@')[0]?.slice(1))}</span>
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '1rem' }}>
             Enterprise {settings.app_name} Marketing & Automation Dashboard

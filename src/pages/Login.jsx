@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -23,8 +23,30 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, settings } = useAuth();
+  const { login, ssoLogin, settings } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const demouser = params.get('demouser');
+    const sso_token = params.get('sso_token');
+    
+    if (demouser && sso_token) {
+      const performSSO = async () => {
+        setError('');
+        setLoading(true);
+        try {
+          await ssoLogin(demouser, sso_token);
+          navigate('/');
+        } catch (err) {
+          setError(err.response?.data?.error || 'SSO Authentication failed.');
+        } finally {
+          setLoading(false);
+        }
+      };
+      performSSO();
+    }
+  }, [ssoLogin, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -177,6 +199,21 @@ const Login = () => {
             <h2 style={{ fontSize: '1.8rem', fontWeight: 700, marginBottom: '0.5rem' }}>Internal Access</h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Secure login for {settings.app_name} administrators</p>
           </div>
+
+          {error && (
+            <div style={{ 
+              background: 'rgba(239, 68, 68, 0.1)', 
+              border: '1px solid rgba(239, 68, 68, 0.2)', 
+              color: '#f87171', 
+              padding: '10px 14px', 
+              borderRadius: '8px', 
+              fontSize: '0.85rem', 
+              marginBottom: '1.5rem',
+              textAlign: 'center'
+            }}>
+              {error}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: '1.5rem' }}>
