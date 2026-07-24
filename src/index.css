@@ -84,6 +84,11 @@ button.glass-panel:hover {
   outline: none;
 }
 
+.premium-input option {
+  background-color: #01140d;
+  color: white;
+}
+
 .premium-input:focus {
   border-color: var(--primary);
   background: rgba(255, 255, 255, 0.05);

@@ -27,6 +27,7 @@ export const AuthProvider = ({ children }) => {
       const storedUser = localStorage.getItem('user');
       if (token && storedUser) {
         setUser(JSON.parse(storedUser));
+        // Set auth header BEFORE fetching settings so the request is authenticated
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
 

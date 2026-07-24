@@ -224,7 +224,7 @@ const Login = () => {
                   type="email" 
                   className="premium-input"
                   style={{ paddingLeft: '48px' }}
-                  placeholder="marketing@zipaworld.com"
+                  placeholder="marketing1@zipaworld.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required

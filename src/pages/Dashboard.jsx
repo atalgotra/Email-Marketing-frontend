@@ -64,8 +64,8 @@ const Dashboard = () => {
   ];
 
   const quickActions = [
-    { label: 'New Campaign', icon: <Zap size={18} />, color: 'var(--primary)', path: '/campaigns' },
-    { label: 'Import Contacts', icon: <Users size={18} />, color: 'var(--secondary)', path: '/campaigns' },
+    { label: 'New Campaign', icon: <Zap size={18} />, color: 'var(--primary)', path: '/campaigns', state: { createNew: true } },
+    { label: 'Import Contacts', icon: <Users size={18} />, color: 'var(--secondary)', path: '/campaigns', state: { createNew: true } },
     { label: 'View Reports', icon: <BarChart3 size={18} />, color: '#10b981', path: '/analytics' },
     { label: 'Automation Rules', icon: <Bell size={18} />, color: '#f59e0b', path: '/settings' },
   ];
@@ -85,7 +85,7 @@ const Dashboard = () => {
           {quickActions.map((action, i) => (
             <button 
               key={i} 
-              onClick={() => navigate(action.path)}
+              onClick={() => navigate(action.path, { state: action.state })}
               className="glass-panel" 
               style={{ 
                 padding: '10px 16px', 

@@ -1,32 +1,124 @@
-import React, { useState, useEffect } from 'react';
-import { Send, FileText, Mail, Plus, Trash2, Info, Loader2, BarChart3, Eye, ArrowLeft, Copy } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
+import { Send, FileText, Mail, Plus, Trash2, Info, Loader2, BarChart3, Eye, ArrowLeft, Copy, LayoutTemplate } from 'lucide-react';
 import axios from 'axios';
 import { motion } from 'framer-motion';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
+import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 import API_BASE_URL from '../apiConfig';
 import { useAuth } from '../context/AuthContext';
 
 const Campaigns = () => {
   const { settings } = useAuth();
+  const location = useLocation();
   const [view, setView] = useState('list'); // 'list', 'create', or 'details'
   const [campaigns, setCampaigns] = useState([]);
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [campaignLogs, setCampaignLogs] = useState([]);
+  const [logFilter, setLogFilter] = useState('All');
+  
+  const filteredLogs = campaignLogs.filter(log => {
+    if (logFilter === 'All') return true;
+    if (logFilter === 'Opened') return log.status === 'Opened' || log.status === 'Clicked';
+    if (logFilter === 'Successfully Delivered') return log.status !== 'Failed';
+    return log.status === logFilter;
+  });
+
+  const downloadReportCsv = () => {
+    if (filteredLogs.length === 0) return;
+    const headers = ['Email', 'Name', 'Status', 'Sent At', 'Opened At', 'Clicked At', 'Failure Reason'];
+    const rows = filteredLogs.map(log => [
+      log.email,
+      log.name && log.name !== 'Recipient' ? log.name : '',
+      log.status,
+      log.sent_at ? new Date(log.sent_at).toLocaleString() : '',
+      log.opened_at ? new Date(log.opened_at).toLocaleString() : '',
+      log.clicked_at ? new Date(log.clicked_at).toLocaleString() : '',
+      log.failed_reason || ''
+    ]);
+    
+    // Simple CSV escaping
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + [headers, ...rows].map(e => e.map(val => `"${(val||'').toString().replace(/"/g, '""')}"`).join(",")).join("\n");
+      
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `campaign_report_${logFilter.toLowerCase().replace(/[^a-z0-9]/g, '_')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const stats = useMemo(() => {
+    if (!campaignLogs.length) return null;
+    const total = campaignLogs.length;
+    const failed = campaignLogs.filter(l => l.status === 'Failed').length;
+    const delivered = total - failed;
+    const opened = campaignLogs.filter(l => l.status === 'Opened' || l.status === 'Clicked').length;
+    const clicked = campaignLogs.filter(l => l.status === 'Clicked').length;
+    const unopened = campaignLogs.filter(l => l.status === 'Delivered').length;
+
+    let desktop = 0;
+    let mobile = 0;
+    
+    campaignLogs.forEach(log => {
+      if (log.status === 'Opened' || log.status === 'Clicked') {
+        const openedEvent = log.events?.find(e => e.status === 'opened');
+        const clickedEvent = log.events?.find(e => e.status === 'clicked');
+        const device = clickedEvent?.metadata?.device || openedEvent?.metadata?.device;
+        if (device === 'mobile') mobile++;
+        else if (device === 'desktop') desktop++;
+      }
+    });
+
+    return {
+      total,
+      delivered,
+      opened,
+      clicked,
+      unopened,
+      failed,
+      openRate: delivered > 0 ? ((opened / delivered) * 100).toFixed(1) : 0,
+      clickRate: delivered > 0 ? ((clicked / delivered) * 100).toFixed(1) : 0,
+      bounceRate: total > 0 ? ((failed / total) * 100).toFixed(1) : 0,
+      deviceData: [
+        { name: 'Desktop', value: desktop },
+        { name: 'Mobile', value: mobile }
+      ]
+    };
+  }, [campaignLogs]);
   const [previewCampaign, setPreviewCampaign] = useState(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [formData, setFormData] = useState({
     campaign_name: '',
     subjects: '',
+    preheader: '',
     body: '',
     emails: '',
     is_scheduled: false,
-    scheduled_at: ''
+    scheduled_at: '',
+    draft_id: null
   });
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
+
+  const handleEditDraft = (c) => {
+    setFormData({
+      campaign_name: c.name,
+      subjects: c.subject ? c.subject.join('\n') : '',
+      preheader: c.preheader || '',
+      body: c.body || '',
+      emails: c.recipients_list ? c.recipients_list.map(r => r.email).join('\n') : '',
+      is_scheduled: false,
+      scheduled_at: '',
+      draft_id: c._id
+    });
+    setView('create');
+  };
 
   const showNotification = (msg) => {
     setNotification(msg);
@@ -65,10 +157,12 @@ const Campaigns = () => {
     setFormData({
       campaign_name: `${c.name} (Copy)`,
       subjects: c.subject.join('\n'),
+      preheader: c.preheader || '',
       body: c.body,
       emails: '',
       is_scheduled: false,
-      scheduled_at: ''
+      scheduled_at: '',
+      draft_id: null
     });
     setView('create');
     showNotification('Template cloned successfully!');
@@ -86,8 +180,10 @@ const Campaigns = () => {
   };
 
   const quillFormats = [
-    'header', 'bold', 'italic', 'underline', 'strike',
-    'list', 'bullet', 'link', 'image', 'color', 'background'
+    'header', 'font', 'size',
+    'bold', 'italic', 'underline', 'strike', 'blockquote',
+    'list', 'indent',
+    'link', 'image', 'video', 'color', 'background', 'align'
   ];
 
   useEffect(() => {
@@ -95,6 +191,57 @@ const Campaigns = () => {
       fetchCampaigns();
     }
   }, [view]);
+
+  useEffect(() => {
+    if (location.state?.loadTemplate) {
+      const t = location.state.loadTemplate;
+      setFormData(prev => ({
+        ...prev,
+        campaign_name: t.name,
+        subjects: t.subject,
+        preheader: t.preheader || '',
+        body: t.body
+      }));
+      setView('create');
+      // clear state so it doesn't reload on every render if we navigate away and back
+      window.history.replaceState({}, document.title);
+    } else if (location.state?.createNew) {
+      setView('create');
+      setFormData({
+        campaign_name: '',
+        subjects: '',
+        preheader: '',
+        body: '',
+        emails: '',
+        is_scheduled: false,
+        scheduled_at: '',
+        draft_id: null
+      });
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
+
+  const handleSaveTemplate = async () => {
+    if (!formData.campaign_name || !formData.subjects || !formData.body) {
+      showNotification("Name, Subject, and Body are required to save a template.");
+      return;
+    }
+    try {
+      setLoading(true);
+      await axios.post(`${API_BASE_URL}/templates`, {
+        name: formData.campaign_name,
+        subject: formData.subjects,
+        preheader: formData.preheader,
+        body: formData.body
+      });
+      showNotification("Template saved to library successfully!");
+    } catch (err) {
+      console.error(err);
+      showNotification("Failed to save template.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchCampaigns = async () => {
     try {
@@ -108,7 +255,7 @@ const Campaigns = () => {
   const fetchCampaignLogs = async (id) => {
     try {
       setLoading(true);
-      const res = await axios.get(`${API_BASE_URL}/campaigns/${id}/logs`);
+      const res = await axios.get(`${API_BASE_URL}/campaigns/${id}/recipients`);
       setCampaignLogs(res.data);
       setView('details');
     } catch (err) {
@@ -125,7 +272,6 @@ const Campaigns = () => {
     try {
       setLoading(true);
       const res = await axios.delete(`${API_BASE_URL}/campaigns/${targetId}`);
-      console.log("Delete response:", res.data);
       setDeleteConfirmId(null);
       await fetchCampaigns();
     } catch (err) {
@@ -136,44 +282,55 @@ const Campaigns = () => {
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    const data = new FormData();
-    Object.keys(formData).forEach(key => data.append(key, formData[key]));
-    if (file) data.append('file', file);
-    
+  const handleSubmit = async (e, isDraft = false) => {
+    if (e) e.preventDefault();
     try {
+      setLoading(true);
+      const formDataToSend = new FormData();
+      formDataToSend.append('campaign_name', formData.campaign_name);
+      formDataToSend.append('subjects', formData.subjects);
+      formDataToSend.append('preheader', formData.preheader);
+      formDataToSend.append('body', formData.body);
+      formDataToSend.append('emails', formData.emails);
+      if (formData.is_scheduled && formData.scheduled_at) {
+        formDataToSend.append('scheduled_at', formData.scheduled_at);
+      }
+      if (isDraft) {
+        formDataToSend.append('is_draft', 'true');
+      }
+      if (formData.draft_id) {
+        formDataToSend.append('draft_id', formData.draft_id);
+      }
+      
+      if (file) formDataToSend.append('file', file);
+    
       const [smtpRes, configRes] = await Promise.all([
         axios.get(`${API_BASE_URL}/config/smtp`),
         axios.get(`${API_BASE_URL}/config/general`)
       ]);
 
       const generalConfig = configRes.data || { delay_min: 30, delay_max: 120 };
-      
-      // Use the configured Public URL if available, otherwise fallback to local server calculation
       generalConfig.server_url = generalConfig.public_url || API_BASE_URL.replace('/api', '');
 
-      data.append('config', JSON.stringify(generalConfig));
-      data.append('smtp_config', JSON.stringify(smtpRes.data || { provider: 'smtp' }));
+      formDataToSend.append('config', JSON.stringify(generalConfig));
+      formDataToSend.append('smtp_config', JSON.stringify(smtpRes.data || { provider: 'smtp' }));
 
-      const res = await axios.post(`${API_BASE_URL}/campaigns/send`, data);
-      showNotification(res.data.message);
+      const res = await axios.post(`${API_BASE_URL}/campaigns/send`, formDataToSend);
+      showNotification(isDraft ? 'Draft saved successfully!' : res.data.message);
       
-      // Clear form
       setFormData({ 
         campaign_name: '', 
         subjects: '', 
+        preheader: '',
         body: '', 
         emails: '', 
         is_scheduled: false, 
-        scheduled_at: '' 
+        scheduled_at: '',
+        draft_id: null
       });
       setFile(null);
-      
-      // Switch view and refresh
-      setView('list');
       await fetchCampaigns();
+      setView('list');
     } catch (err) {
       console.error(err);
       alert('Failed to start campaign. Please check your SMTP settings in the Settings tab.');
@@ -274,8 +431,8 @@ const Campaigns = () => {
                         fontSize: '0.7rem', 
                         padding: '4px 10px', 
                         borderRadius: '8px', 
-                        background: c.status === 'completed' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(124, 58, 237, 0.1)',
-                        color: c.status === 'completed' ? '#10b981' : 'var(--primary)',
+                        background: c.status === 'completed' ? 'rgba(16, 185, 129, 0.1)' : c.status === 'draft' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(124, 58, 237, 0.1)',
+                        color: c.status === 'completed' ? '#10b981' : c.status === 'draft' ? '#f59e0b' : 'var(--primary)',
                         fontWeight: 700,
                         textTransform: 'uppercase'
                       }}>
@@ -325,12 +482,15 @@ const Campaigns = () => {
                         >
                           <Copy size={14} /> Clone
                         </button>
-                        <button 
-                          onClick={() => fetchCampaignLogs(c._id)}
-                          style={{ background: 'rgba(99, 102, 241, 0.1)', border: 'none', color: '#6366f1', cursor: 'pointer', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600 }}
-                        >
-                          <BarChart3 size={14} /> Audit
-                        </button>
+                        {c.status === 'draft' ? (
+                          <button onClick={() => handleEditDraft(c)} style={{ background: 'rgba(245, 158, 11, 0.1)', border: 'none', color: '#f59e0b', cursor: 'pointer', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+                            <FileText size={14} /> Edit
+                          </button>
+                        ) : (
+                          <button onClick={() => fetchCampaignLogs(c._id)} style={{ background: 'rgba(99, 102, 241, 0.1)', border: 'none', color: '#6366f1', cursor: 'pointer', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+                            <BarChart3 size={14} /> Audit
+                          </button>
+                        )}
                         <button 
                           style={{ 
                             background: 'rgba(244, 63, 94, 0.1)', 
@@ -359,33 +519,126 @@ const Campaigns = () => {
         </div>
       ) : view === 'details' ? (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-panel" style={{ padding: '1.5rem' }}>
+          
+          {stats && (
+            <div style={{ marginBottom: '2.5rem' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--primary)' }}>Campaign Analytics</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Recipients</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{stats.total}</div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Delivered</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{stats.delivered}</div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Failed / Bounced</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#f43f5e' }}>{stats.failed} <span style={{ fontSize: '0.8rem', fontWeight: 400 }}>({stats.bounceRate}%)</span></div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Opened</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#10b981' }}>{stats.opened} <span style={{ fontSize: '0.8rem', fontWeight: 400 }}>({stats.openRate}%)</span></div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Clicked</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#6366f1' }}>{stats.clicked} <span style={{ fontSize: '0.8rem', fontWeight: 400 }}>({stats.clickRate}%)</span></div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Unopened</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#94a3b8' }}>{stats.unopened}</div>
+                </div>
+              </div>
+              
+              {stats.deviceData && stats.deviceData.some(d => d.value > 0) && (
+                <div style={{ marginTop: '1.5rem', padding: '1.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '1rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Device Distribution (Opens & Clicks)</h4>
+                  <div style={{ height: '200px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={stats.deviceData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {stats.deviceData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.name === 'Desktop' ? '#6366f1' : '#10b981'} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip 
+                          contentStyle={{ background: '#1e293b', border: 'none', borderRadius: '8px', color: '#f8fafc' }}
+                          itemStyle={{ color: '#f8fafc' }}
+                        />
+                        <Legend verticalAlign="bottom" height={36}/>
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>Filter Status:</label>
+              <select 
+                className="premium-input" 
+                style={{ width: '220px', padding: '8px 12px' }}
+                value={logFilter}
+                onChange={(e) => setLogFilter(e.target.value)}
+              >
+                <option value="All">Complete Campaign Report</option>
+                <option value="Opened">Opened Email IDs</option>
+                <option value="Clicked">Clicked Email IDs</option>
+                <option value="Delivered">Unopened Email IDs</option>
+                <option value="Successfully Delivered">All Delivered Email IDs</option>
+                <option value="Failed">Failed/Bounced Email IDs</option>
+              </select>
+            </div>
+            <button 
+              className="premium-btn" 
+              onClick={downloadReportCsv}
+              disabled={filteredLogs.length === 0}
+              style={{ background: 'var(--accent)', padding: '8px 16px', fontSize: '0.85rem' }}
+            >
+              Download CSV Report
+            </button>
+          </div>
+
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border-light)', color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   <th style={{ padding: '12px' }}>Recipient Address</th>
-                  <th style={{ padding: '12px' }}>Event Type</th>
-                  <th style={{ padding: '12px' }}>Engagement Timestamp</th>
-                  <th style={{ padding: '12px' }}>Metadata</th>
+                  <th style={{ padding: '12px' }}>Status</th>
+                  <th style={{ padding: '12px' }}>Engagement Timestamps</th>
+                  <th style={{ padding: '12px' }}>Failure Details</th>
                 </tr>
               </thead>
               <tbody>
-                {campaignLogs.length === 0 ? (
+                {filteredLogs.length === 0 ? (
                   <tr>
                     <td colSpan="4" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                      No engagement logs recorded yet for this campaign.
+                      No engagement logs match this filter.
                     </td>
                   </tr>
-                ) : campaignLogs.map((log, i) => (
+                ) : filteredLogs.map((log, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                    <td style={{ padding: '14px 12px', fontWeight: 600, fontSize: '0.85rem' }}>{log.email}</td>
+                    <td style={{ padding: '14px 12px', fontWeight: 600, fontSize: '0.85rem' }}>
+                      {log.name && log.name !== 'Recipient' ? <div style={{ marginBottom: '2px' }}>{log.name}</div> : null}
+                      <div style={{ color: log.name && log.name !== 'Recipient' ? 'var(--text-muted)' : 'white', fontSize: log.name && log.name !== 'Recipient' ? '0.75rem' : '0.85rem' }}>{log.email}</div>
+                    </td>
                     <td style={{ padding: '14px 12px' }}>
                       <span style={{ 
                         fontSize: '0.65rem', 
                         padding: '3px 8px', 
                         borderRadius: '6px', 
-                        background: log.status === 'opened' ? 'rgba(16, 185, 129, 0.1)' : log.status === 'clicked' ? 'rgba(99, 102, 241, 0.1)' : log.status === 'failed' ? 'rgba(244, 63, 94, 0.1)' : 'rgba(255,255,255,0.05)',
-                        color: log.status === 'opened' ? '#10b981' : log.status === 'clicked' ? '#6366f1' : log.status === 'failed' ? '#f43f5e' : 'white',
+                        background: log.status === 'Opened' ? 'rgba(16, 185, 129, 0.1)' : log.status === 'Clicked' ? 'rgba(99, 102, 241, 0.1)' : log.status === 'Failed' ? 'rgba(244, 63, 94, 0.1)' : 'rgba(255,255,255,0.05)',
+                        color: log.status === 'Opened' ? '#10b981' : log.status === 'Clicked' ? '#6366f1' : log.status === 'Failed' ? '#f43f5e' : 'white',
                         fontWeight: 700,
                         textTransform: 'uppercase'
                       }}>
@@ -393,19 +646,14 @@ const Campaigns = () => {
                       </span>
                     </td>
                     <td style={{ padding: '14px 12px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {new Date(log.timestamp).toLocaleString()}
-                    </td>
-                    <td style={{ padding: '14px 12px', fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        {log.metadata?.device && <span>Device: {log.metadata.device}</span>}
-                        {log.status === 'clicked' && (
-                          <span>Link: {log.metadata?.url ? log.metadata.url.substring(0, 30) + '...' : 'Unknown'}</span>
-                        )}
-                        {log.status === 'failed' && (
-                          <span style={{ color: '#f43f5e' }}>Error: {log.error}</span>
-                        )}
-                        {!log.metadata?.device && !log.metadata?.url && log.status !== 'failed' && 'N/A'}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {log.opened_at && <div><span style={{ color: '#10b981', fontWeight: 600 }}>Opened:</span> {new Date(log.opened_at).toLocaleString()}</div>}
+                        {log.clicked_at && <div><span style={{ color: '#6366f1', fontWeight: 600 }}>Clicked:</span> {new Date(log.clicked_at).toLocaleString()}</div>}
+                        {!log.opened_at && !log.clicked_at && <div>No engagement yet</div>}
                       </div>
+                    </td>
+                    <td style={{ padding: '14px 12px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                      {log.status === 'Failed' ? <span style={{ color: '#f43f5e' }}>{log.failed_reason || 'Unknown error'}</span> : 'N/A'}
                     </td>
                   </tr>
                 ))}
@@ -416,7 +664,6 @@ const Campaigns = () => {
       ) : (
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: '1.5rem' }}>
-            {/* Form Content (Previous Implementation) */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               <div className="glass-panel" style={{ padding: '2rem' }}>
                 <div style={{ marginBottom: '1.5rem' }}>
@@ -445,6 +692,20 @@ const Campaigns = () => {
                     onChange={(e) => setFormData({...formData, subjects: e.target.value})}
                     placeholder="Important Shipment Update&#10;Action Required: Your Delivery Status&#10;Logistics Notification"
                     required
+                  />
+                </div>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Preview Text (Preheader)</label>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Visible in inbox before opening</span>
+                  </div>
+                  <input 
+                    type="text" 
+                    className="premium-input"
+                    value={formData.preheader}
+                    onChange={(e) => setFormData({...formData, preheader: e.target.value})}
+                    placeholder="E.g. Don't miss out on this quarter's biggest update..."
                   />
                 </div>
 
@@ -527,9 +788,17 @@ const Campaigns = () => {
                 <textarea rows="8" className="premium-input" value={formData.emails} onChange={(e) => setFormData({...formData, emails: e.target.value})} placeholder="email1@example.com&#10;email2@example.com" />
               </div>
 
-              <button type="submit" disabled={loading} className="premium-btn" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', padding: '16px' }}>
-                {loading ? <Loader2 size={20} className="animate-spin" /> : <><Send size={20} /> <span style={{ fontSize: '1rem', fontWeight: 700 }}>Launch Campaign</span></>}
-              </button>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button type="button" disabled={loading} onClick={handleSaveTemplate} className="premium-btn" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '16px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)' }}>
+                  <LayoutTemplate size={18} /> <span style={{ fontSize: '1rem', fontWeight: 600 }}>Save as Template</span>
+                </button>
+                <button type="button" disabled={loading} onClick={(e) => handleSubmit(e, true)} className="premium-btn" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '16px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)' }}>
+                  <FileText size={18} /> <span style={{ fontSize: '1rem', fontWeight: 600 }}>Save as Draft</span>
+                </button>
+                <button type="submit" disabled={loading} className="premium-btn" style={{ flex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', padding: '16px' }}>
+                  {loading ? <Loader2 size={20} className="animate-spin" /> : <><Send size={20} /> <span style={{ fontSize: '1rem', fontWeight: 700 }}>{formData.is_scheduled ? 'Schedule Campaign' : 'Launch Campaign'}</span></>}
+                </button>
+              </div>
               
               <div style={{ padding: '1.2rem', borderRadius: '16px', background: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.1)', display: 'flex', gap: '12px' }}>
                 <Info size={18} style={{ color: '#f59e0b', flexShrink: 0 }} />

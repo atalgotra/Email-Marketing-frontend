@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Send, BarChart3, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Send, BarChart3, Settings, LogOut, LayoutTemplate } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const Sidebar = () => {
@@ -8,6 +8,7 @@ const Sidebar = () => {
   const menuItems = [
     { path: '/', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
     { path: '/campaigns', icon: <Send size={20} />, label: 'Campaigns' },
+    { path: '/templates', icon: <LayoutTemplate size={20} />, label: 'Templates' },
     { path: '/analytics', icon: <BarChart3 size={20} />, label: 'Analytics' },
     { path: '/settings', icon: <Settings size={20} />, label: 'Settings' },
   ];
