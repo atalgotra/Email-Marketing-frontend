@@ -399,7 +399,7 @@ const Settings = () => {
           </form>
         </div>
 
-
+        </div>
       </div>
     </motion.div>
 

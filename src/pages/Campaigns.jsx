@@ -304,16 +304,13 @@ const Campaigns = () => {
       
       if (file) formDataToSend.append('file', file);
     
-      const [smtpRes, configRes] = await Promise.all([
-        axios.get(`${API_BASE_URL}/config/smtp`),
-        axios.get(`${API_BASE_URL}/config/general`)
-      ]);
+      const configRes = await axios.get(`${API_BASE_URL}/config/general`);
 
       const generalConfig = configRes.data || { delay_min: 30, delay_max: 120 };
       generalConfig.server_url = generalConfig.public_url || API_BASE_URL.replace('/api', '');
 
       formDataToSend.append('config', JSON.stringify(generalConfig));
-      formDataToSend.append('smtp_config', JSON.stringify(smtpRes.data || { provider: 'smtp' }));
+      formDataToSend.append('smtp_config', JSON.stringify({ provider: 'smtp' }));
 
       const res = await axios.post(`${API_BASE_URL}/campaigns/send`, formDataToSend);
       showNotification(isDraft ? 'Draft saved successfully!' : res.data.message);
@@ -333,7 +330,7 @@ const Campaigns = () => {
       setView('list');
     } catch (err) {
       console.error(err);
-      alert('Failed to start campaign. Please check your SMTP settings in the Settings tab.');
+      alert(err.response?.data?.error || 'Failed to start campaign. Please check the logs.');
     } finally {
       setLoading(false);
     }
