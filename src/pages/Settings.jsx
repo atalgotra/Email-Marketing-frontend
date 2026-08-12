@@ -1,3 +1,4 @@
+// Settings Page
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../apiConfig';
@@ -12,7 +13,6 @@ import {
   Settings as SettingsIcon, 
   Globe,
   Lock,
-  Mail,
   ShieldCheck,
   Loader2,
   Zap,
@@ -28,7 +28,6 @@ const Settings = () => {
   const { user: currentUser, settings, refreshSettings } = useAuth();
   const [users, setUsers] = useState([]);
   const [newUser, setNewUser] = useState({ email: '', password: '', role: 'user' });
-  const [smtpConfig, setSmtpConfig] = useState({ host: '', port: '', user: '', pass: '', provider: 'smtp' });
   const [generalConfig, setGeneralConfig] = useState({});
   const [loading, setLoading] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
@@ -36,17 +35,13 @@ const Settings = () => {
   useEffect(() => {
     if (currentUser?.role === 'superadmin') {
       fetchUsers();
-      fetchSmtpConfig();
       fetchGeneralConfig();
     }
   }, [currentUser]);
 
   const fetchGeneralConfig = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const res = await axios.get(`${API_BASE_URL}/config/general`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await axios.get(`${API_BASE_URL}/config/general`);
       if (res.data) setGeneralConfig(res.data);
     } catch (err) {
       console.error('Failed to fetch general config');
@@ -56,11 +51,7 @@ const Settings = () => {
   const handleSaveGeneral = async (e) => {
     e.preventDefault();
     try {
-      const token = localStorage.getItem('token');
-      await axios.post(`${API_BASE_URL}/config/general`, 
-        { value: generalConfig },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await axios.post(`${API_BASE_URL}/config/general`, { value: generalConfig });
       await refreshSettings();
       setShowSaved(true);
       setTimeout(() => setShowSaved(false), 3000);
@@ -69,39 +60,9 @@ const Settings = () => {
     }
   };
 
-  const fetchSmtpConfig = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const res = await axios.get(`${API_BASE_URL}/config/smtp`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.data) setSmtpConfig(res.data);
-    } catch (err) {
-      console.error('Failed to fetch SMTP config');
-    }
-  };
-
-  const handleSaveSmtp = async (e) => {
-    e.preventDefault();
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post(`${API_BASE_URL}/config/smtp`, 
-        { value: smtpConfig },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setShowSaved(true);
-      setTimeout(() => setShowSaved(false), 3000);
-    } catch (err) {
-      console.error('SMTP Save failed', err);
-    }
-  };
-
   const fetchUsers = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const res = await axios.get(`${API_BASE_URL}/users`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await axios.get(`${API_BASE_URL}/users`);
       setUsers(res.data);
     } catch (err) {
       console.error('Failed to fetch users');
@@ -111,10 +72,7 @@ const Settings = () => {
   const handleCreateUser = async (e) => {
     e.preventDefault();
     try {
-      const token = localStorage.getItem('token');
-      await axios.post(`${API_BASE_URL}/users`, newUser, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.post(`${API_BASE_URL}/users`, newUser);
       setNewUser({ email: '', password: '', role: 'user' });
       fetchUsers();
       alert('User created successfully');
@@ -125,10 +83,7 @@ const Settings = () => {
 
   const toggleUserStatus = async (id, currentStatus) => {
     try {
-      const token = localStorage.getItem('token');
-      await axios.patch(`${API_BASE_URL}/users/${id}`, { isActive: !currentStatus }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.patch(`${API_BASE_URL}/users/${id}`, { isActive: !currentStatus });
       fetchUsers();
     } catch (err) {
       alert('Failed to update user status');
@@ -138,10 +93,7 @@ const Settings = () => {
   const softDeleteUser = async (id) => {
     if (!window.confirm('Are you sure you want to delete this user?')) return;
     try {
-      const token = localStorage.getItem('token');
-      await axios.delete(`${API_BASE_URL}/users/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.delete(`${API_BASE_URL}/users/${id}`);
       fetchUsers();
     } catch (err) {
       alert('Failed to delete user');
@@ -152,10 +104,7 @@ const Settings = () => {
     const newPassword = window.prompt('Enter new password:');
     if (!newPassword) return;
     try {
-      const token = localStorage.getItem('token');
-      await axios.patch(`${API_BASE_URL}/users/${id}`, { password: newPassword }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.patch(`${API_BASE_URL}/users/${id}`, { password: newPassword });
       alert('Password changed successfully');
     } catch (err) {
       alert('Failed to change password');
@@ -399,7 +348,6 @@ const Settings = () => {
           </form>
         </div>
 
-        </div>
       </div>
     </motion.div>
 

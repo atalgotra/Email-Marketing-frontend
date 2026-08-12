@@ -32,8 +32,12 @@ function App() {
         {user && <Sidebar />}
         <main style={{ 
           flex: 1, 
+          minWidth: 0,
+          maxWidth: user ? 'calc(100vw - 260px)' : '100vw',
+          width: user ? 'calc(100vw - 260px)' : '100vw',
           padding: user ? '2rem' : '0', 
           marginLeft: user ? '260px' : '0',
+          boxSizing: 'border-box',
           background: 'transparent' 
         }}>
           <Routes>

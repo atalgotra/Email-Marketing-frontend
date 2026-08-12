@@ -129,6 +129,59 @@ const Campaigns = () => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
 
+  // Format milliseconds into human-readable duration e.g. "2h 14m 33s"
+  const formatDuration = (ms) => {
+    if (ms === undefined || ms === null || isNaN(ms) || ms < 0) return '—';
+    const totalSec = Math.floor(ms / 1000);
+    if (totalSec < 1) return '< 1s';
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
+
+  const formatDateTime = (dateStr) => {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleString('en-IN', { 
+      timeZone: 'Asia/Kolkata', 
+      day: '2-digit', 
+      month: 'short', 
+      year: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      hour12: true 
+    });
+  };
+
+  const getTimelineInfo = (c) => {
+    // Derive effective start timestamp
+    const started = c.started_at || (c.status !== 'draft' ? c.created_at : null);
+    // Derive effective completion timestamp
+    const completed = c.completed_at || (c.status === 'completed' || c.status === 'stopped' ? (c.updated_at || c.created_at) : null);
+
+    let durationText = '—';
+    if (c.status === 'running' && started) {
+      const diff = Date.now() - new Date(started).getTime();
+      durationText = formatDuration(diff) + ' (live)';
+    } else if (started && completed) {
+      const diff = new Date(completed).getTime() - new Date(started).getTime();
+      durationText = formatDuration(Math.max(diff, 1000));
+    } else if (c.status === 'completed' && started) {
+      durationText = '< 1s';
+    }
+
+    return {
+      startText: formatDateTime(started),
+      endText: c.status === 'running' ? 'Running…' : formatDateTime(completed),
+      durationText,
+      hasStarted: Boolean(started)
+    };
+  };
+
   const toggleSelectAll = () => {
     if (selectedIds.length === campaigns.length) {
       setSelectedIds([]);
@@ -285,6 +338,24 @@ const Campaigns = () => {
   const handleSubmit = async (e, isDraft = false) => {
     if (e) e.preventDefault();
     try {
+      // Frontend validation: if scheduling is enabled, ensure the date is valid and in the future
+      if (!isDraft && formData.is_scheduled) {
+        if (!formData.scheduled_at) {
+          alert('Please select a scheduled date and time before submitting.');
+          return;
+        }
+        const scheduledDate = new Date(formData.scheduled_at);
+        const now = new Date();
+        if (isNaN(scheduledDate.getTime())) {
+          alert('The scheduled date is invalid. Please re-select a date and time.');
+          return;
+        }
+        if (scheduledDate <= now) {
+          alert(`Scheduled time must be in the future. You selected: ${scheduledDate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST.\n\nPlease choose a future date/time.`);
+          return;
+        }
+      }
+
       setLoading(true);
       const formDataToSend = new FormData();
       formDataToSend.append('campaign_name', formData.campaign_name);
@@ -382,134 +453,172 @@ const Campaigns = () => {
       </header>
 
       {view === 'list' ? (
-        <div className="glass-panel" style={{ padding: '1.5rem' }}>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="glass-panel" style={{ padding: '0', overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto', width: '100%' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border-light)', color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  <th style={{ padding: '12px', width: '40px' }}>
+                <tr style={{ 
+                  borderBottom: '1px solid var(--border-light)', 
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  color: 'var(--text-muted)', 
+                  fontSize: '0.75rem', 
+                  textTransform: 'uppercase', 
+                  letterSpacing: '0.05em' 
+                }}>
+                  <th style={{ padding: '16px 12px 16px 24px', width: '56px', minWidth: '56px' }}>
                     <input 
                       type="checkbox" 
                       checked={campaigns.length > 0 && selectedIds.length === campaigns.length} 
                       onChange={toggleSelectAll}
-                      style={{ cursor: 'pointer' }}
+                      style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: 'var(--primary)', verticalAlign: 'middle' }}
                     />
                   </th>
-                  <th style={{ padding: '12px' }}>Campaign Details</th>
-                  <th style={{ padding: '12px' }}>Status</th>
-                  <th style={{ padding: '12px' }}>Progress</th>
-                  <th style={{ padding: '12px' }}>Engagement</th>
-                  <th style={{ padding: '12px', textAlign: 'right' }}>Actions</th>
+                  <th style={{ padding: '16px 14px', minWidth: '180px' }}>Campaign Details</th>
+                  <th style={{ padding: '16px 14px', minWidth: '110px' }}>Status</th>
+                  <th style={{ padding: '16px 14px', minWidth: '160px', width: '180px' }}>Progress</th>
+                  <th style={{ padding: '16px 14px', minWidth: '190px' }}>Timeline</th>
+                  <th style={{ padding: '16px 14px', minWidth: '200px' }}>Engagement</th>
+                  <th style={{ padding: '16px 24px 16px 14px', textAlign: 'right', minWidth: '240px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {campaigns.length === 0 ? (
                   <tr>
-                    <td colSpan="6" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <td colSpan="7" style={{ padding: '3.5rem 2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                       No campaigns found. Start by creating your first outreach!
                     </td>
                   </tr>
-                ) : campaigns.map(c => (
-                  <tr key={c._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', background: selectedIds.includes(c._id) ? 'rgba(124, 58, 237, 0.05)' : 'transparent' }}>
-                    <td style={{ padding: '16px 12px' }}>
-                      <input 
-                        type="checkbox" 
-                        checked={selectedIds.includes(c._id)} 
-                        onChange={() => toggleSelect(c._id)}
-                        style={{ cursor: 'pointer' }}
-                      />
-                    </td>
-                    <td style={{ padding: '16px 12px' }}>
-                      <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '4px' }}>{c.name}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{new Date(c.created_at).toLocaleDateString()}</div>
-                    </td>
-                    <td style={{ padding: '16px 12px' }}>
-                      <span style={{ 
-                        fontSize: '0.7rem', 
-                        padding: '4px 10px', 
-                        borderRadius: '8px', 
-                        background: c.status === 'completed' ? 'rgba(16, 185, 129, 0.1)' : c.status === 'draft' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(124, 58, 237, 0.1)',
-                        color: c.status === 'completed' ? '#10b981' : c.status === 'draft' ? '#f59e0b' : 'var(--primary)',
-                        fontWeight: 700,
-                        textTransform: 'uppercase'
-                      }}>
-                        {c.status}
-                      </span>
-                    </td>
-                    <td style={{ padding: '16px 12px', width: '200px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '6px', fontWeight: 600 }}>
-                        <span>{c.total_recipients > 0 ? Math.round((c.current_index / c.total_recipients) * 100) : 0}%</span>
-                        <span style={{ color: 'var(--text-muted)' }}>{c.current_index} / {c.total_recipients}</span>
-                      </div>
-                      <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
-                        <div style={{ width: `${c.total_recipients > 0 ? (c.current_index / c.total_recipients) * 100 : 0}%`, height: '100%', background: 'var(--primary)' }} />
-                      </div>
-                    </td>
-                    <td style={{ padding: '16px 12px' }}>
-                      <div style={{ display: 'flex', gap: '15px' }}>
-                        <div style={{ textAlign: 'center' }}>
-                          <p style={{ fontSize: '0.85rem', fontWeight: 700 }}>{c.sent_count}</p>
-                          <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Sent</p>
+                ) : campaigns.map(c => {
+                  const t = getTimelineInfo(c);
+                  return (
+                    <tr key={c._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', background: selectedIds.includes(c._id) ? 'rgba(16, 185, 129, 0.06)' : 'transparent', transition: 'background 0.2s ease' }}>
+                      <td style={{ padding: '16px 12px 16px 24px', width: '56px', minWidth: '56px' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedIds.includes(c._id)} 
+                          onChange={() => toggleSelect(c._id)}
+                          style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: 'var(--primary)', verticalAlign: 'middle' }}
+                        />
+                      </td>
+                      <td style={{ padding: '16px 14px', minWidth: '180px' }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '4px', color: 'white' }}>{c.name}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{new Date(c.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                      </td>
+                      <td style={{ padding: '16px 14px', minWidth: '110px' }}>
+                        <span style={{ 
+                          fontSize: '0.7rem', 
+                          padding: '4px 10px', 
+                          borderRadius: '8px', 
+                          background: c.status === 'completed' ? 'rgba(16, 185, 129, 0.12)' : c.status === 'draft' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(99, 102, 241, 0.12)',
+                          color: c.status === 'completed' ? '#10b981' : c.status === 'draft' ? '#f59e0b' : '#818cf8',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em'
+                        }}>
+                          {c.status}
+                        </span>
+                      </td>
+                      <td style={{ padding: '16px 14px', minWidth: '160px', width: '180px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '6px', fontWeight: 600 }}>
+                          <span>{c.total_recipients > 0 ? Math.round((c.current_index / c.total_recipients) * 100) : 0}%</span>
+                          <span style={{ color: 'var(--text-muted)' }}>{c.current_index} / {c.total_recipients}</span>
                         </div>
-                        <div style={{ textAlign: 'center' }}>
-                          <p style={{ fontSize: '0.85rem', fontWeight: 700, color: '#10b981' }}>{c.open_count || 0}</p>
-                          <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Opens</p>
+                        <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{ width: `${c.total_recipients > 0 ? (c.current_index / c.total_recipients) * 100 : 0}%`, height: '100%', background: 'var(--primary)' }} />
                         </div>
-                        <div style={{ textAlign: 'center' }}>
-                          <p style={{ fontSize: '0.85rem', fontWeight: 700, color: '#6366f1' }}>{c.click_count || 0}</p>
-                          <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Clicks</p>
+                      </td>
+
+                      {/* Timeline: Start, End, Duration */}
+                      <td style={{ padding: '16px 14px', minWidth: '190px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#10b981', textTransform: 'uppercase', minWidth: '38px', letterSpacing: '0.04em' }}>Start</span>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t.startText}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: c.status === 'running' ? '#f59e0b' : '#f43f5e', textTransform: 'uppercase', minWidth: '38px', letterSpacing: '0.04em' }}>End</span>
+                            <span style={{ fontSize: '0.72rem', color: c.status === 'running' ? '#f59e0b' : 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: c.status === 'running' ? 600 : 400 }}>
+                              {t.endText}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', minWidth: '38px', letterSpacing: '0.04em' }}>Time</span>
+                            <span style={{ fontSize: '0.72rem', color: t.hasStarted ? 'white' : 'var(--text-muted)', fontWeight: t.hasStarted ? 600 : 400, whiteSpace: 'nowrap' }}>
+                              {t.durationText}
+                            </span>
+                          </div>
                         </div>
-                        <div style={{ textAlign: 'center' }}>
-                          <p style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f43f5e' }}>{c.failed_count || 0}</p>
-                          <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Failed</p>
+                      </td>
+
+                      {/* Engagement */}
+                      <td style={{ padding: '16px 14px', minWidth: '200px' }}>
+                        <div style={{ display: 'flex', gap: '16px' }}>
+                          <div style={{ textAlign: 'center', minWidth: '32px' }}>
+                            <p style={{ fontSize: '0.85rem', fontWeight: 700 }}>{c.sent_count}</p>
+                            <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Sent</p>
+                          </div>
+                          <div style={{ textAlign: 'center', minWidth: '32px' }}>
+                            <p style={{ fontSize: '0.85rem', fontWeight: 700, color: '#10b981' }}>{c.open_count || 0}</p>
+                            <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Opens</p>
+                          </div>
+                          <div style={{ textAlign: 'center', minWidth: '32px' }}>
+                            <p style={{ fontSize: '0.85rem', fontWeight: 700, color: '#818cf8' }}>{c.click_count || 0}</p>
+                            <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Clicks</p>
+                          </div>
+                          <div style={{ textAlign: 'center', minWidth: '32px' }}>
+                            <p style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f43f5e' }}>{c.failed_count || 0}</p>
+                            <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Failed</p>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: '16px 12px', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                        <button 
-                          onClick={() => setPreviewCampaign(c)}
-                          style={{ background: 'rgba(255, 255, 255, 0.05)', border: 'none', color: 'white', cursor: 'pointer', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600 }}
-                        >
-                          <Eye size={14} /> Preview
-                        </button>
-                        <button 
-                          onClick={() => handleClone(c)}
-                          style={{ background: 'rgba(124, 58, 237, 0.1)', border: 'none', color: 'var(--primary)', cursor: 'pointer', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600 }}
-                        >
-                          <Copy size={14} /> Clone
-                        </button>
-                        {c.status === 'draft' ? (
-                          <button onClick={() => handleEditDraft(c)} style={{ background: 'rgba(245, 158, 11, 0.1)', border: 'none', color: '#f59e0b', cursor: 'pointer', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
-                            <FileText size={14} /> Edit
+                      </td>
+
+                      {/* Actions */}
+                      <td style={{ padding: '16px 24px 16px 14px', textAlign: 'right', minWidth: '240px' }}>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                          <button 
+                            onClick={() => setPreviewCampaign(c)}
+                            style={{ background: 'rgba(255, 255, 255, 0.05)', border: 'none', color: 'white', cursor: 'pointer', padding: '8px 12px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600 }}
+                          >
+                            <Eye size={14} /> Preview
                           </button>
-                        ) : (
-                          <button onClick={() => fetchCampaignLogs(c._id)} style={{ background: 'rgba(99, 102, 241, 0.1)', border: 'none', color: '#6366f1', cursor: 'pointer', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
-                            <BarChart3 size={14} /> Audit
+                          <button 
+                            onClick={() => handleClone(c)}
+                            style={{ background: 'rgba(16, 185, 129, 0.1)', border: 'none', color: 'var(--primary)', cursor: 'pointer', padding: '8px 12px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600 }}
+                          >
+                            <Copy size={14} /> Clone
                           </button>
-                        )}
-                        <button 
-                          style={{ 
-                            background: 'rgba(244, 63, 94, 0.1)', 
-                            border: 'none', 
-                            color: '#f43f5e', 
-                            cursor: 'pointer', 
-                            padding: '8px', 
-                            borderRadius: '8px',
-                            position: 'relative',
-                            zIndex: 10
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteConfirmId(c._id);
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {c.status === 'draft' ? (
+                            <button onClick={() => handleEditDraft(c)} style={{ background: 'rgba(245, 158, 11, 0.1)', border: 'none', color: '#f59e0b', cursor: 'pointer', padding: '8px 12px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+                              <FileText size={14} /> Edit
+                            </button>
+                          ) : (
+                            <button onClick={() => fetchCampaignLogs(c._id)} style={{ background: 'rgba(99, 102, 241, 0.1)', border: 'none', color: '#818cf8', cursor: 'pointer', padding: '8px 12px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+                              <BarChart3 size={14} /> Audit
+                            </button>
+                          )}
+                          <button 
+                            style={{ 
+                              background: 'rgba(244, 63, 94, 0.1)', 
+                              border: 'none', 
+                              color: '#f43f5e', 
+                              cursor: 'pointer', 
+                              padding: '8px 10px', 
+                              borderRadius: '8px',
+                              position: 'relative',
+                              zIndex: 10
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteConfirmId(c._id);
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
