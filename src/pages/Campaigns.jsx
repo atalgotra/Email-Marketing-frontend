@@ -1,6 +1,23 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Send, FileText, Mail, Plus, Trash2, Info, Loader2, BarChart3, Eye, ArrowLeft, Copy, LayoutTemplate } from 'lucide-react';
+import { 
+  Send, 
+  FileText, 
+  Mail, 
+  Plus, 
+  Trash2, 
+  Info, 
+  Loader2, 
+  BarChart3, 
+  Eye, 
+  ArrowLeft, 
+  Copy, 
+  LayoutTemplate,
+  Search,
+  Filter,
+  Sparkles,
+  CheckCircle2
+} from 'lucide-react';
 import axios from 'axios';
 import { motion } from 'framer-motion';
 import ReactQuill from 'react-quill-new';
@@ -8,15 +25,19 @@ import 'react-quill-new/dist/quill.snow.css';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 import API_BASE_URL from '../apiConfig';
 import { useAuth } from '../context/AuthContext';
+import { useDemo } from '../context/DemoContext';
 
 const Campaigns = () => {
   const { settings } = useAuth();
+  const { isDemoMode, campaigns: demoCampaigns, addDemoCampaign } = useDemo();
   const location = useLocation();
   const [view, setView] = useState('list'); // 'list', 'create', or 'details'
   const [campaigns, setCampaigns] = useState([]);
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [campaignLogs, setCampaignLogs] = useState([]);
   const [logFilter, setLogFilter] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   
   const filteredLogs = campaignLogs.filter(log => {
     if (logFilter === 'All') return true;
@@ -296,7 +317,23 @@ const Campaigns = () => {
     }
   };
 
+  const displayedCampaigns = useMemo(() => {
+    let list = isDemoMode ? demoCampaigns : campaigns;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(c => 
+        (c.name || '').toLowerCase().includes(q) || 
+        (c.subject || '').toString().toLowerCase().includes(q)
+      );
+    }
+    if (statusFilter !== 'all') {
+      list = list.filter(c => (c.status || '').toLowerCase() === statusFilter.toLowerCase());
+    }
+    return list;
+  }, [isDemoMode, demoCampaigns, campaigns, searchQuery, statusFilter]);
+
   const fetchCampaigns = async () => {
+    if (isDemoMode) return;
     try {
       const res = await axios.get(`${API_BASE_URL}/campaigns`);
       setCampaigns(res.data);
@@ -306,6 +343,25 @@ const Campaigns = () => {
   };
 
   const fetchCampaignLogs = async (id) => {
+    if (isDemoMode) {
+      const cmp = demoCampaigns.find(c => c._id === id);
+      if (cmp) {
+        setSelectedCampaign(cmp);
+        const dummyLogs = [
+          { email: 'aarav.sharma@example.com', name: 'Aarav Sharma', status: 'Opened', sent_at: cmp.created_at, opened_at: cmp.completed_at || cmp.created_at, clicked_at: null, events: [{ status: 'opened', metadata: { device: 'desktop' } }] },
+          { email: 'priya.nair@example.org', name: 'Priya Nair', status: 'Clicked', sent_at: cmp.created_at, opened_at: cmp.completed_at || cmp.created_at, clicked_at: cmp.completed_at || cmp.created_at, events: [{ status: 'clicked', metadata: { device: 'mobile' } }] },
+          { email: 'rohan.mehta@example.com', name: 'Rohan Mehta', status: 'Opened', sent_at: cmp.created_at, opened_at: cmp.completed_at || cmp.created_at, clicked_at: null, events: [{ status: 'opened', metadata: { device: 'desktop' } }] },
+          { email: 'ananya.iyer@example.org', name: 'Ananya Iyer', status: 'Clicked', sent_at: cmp.created_at, opened_at: cmp.completed_at || cmp.created_at, clicked_at: cmp.completed_at || cmp.created_at, events: [{ status: 'clicked', metadata: { device: 'desktop' } }] },
+          { email: 'vikram.patel@example.com', name: 'Vikram Patel', status: 'Delivered', sent_at: cmp.created_at, opened_at: null, clicked_at: null, events: [] },
+          { email: 'sneha.rao@example.org', name: 'Sneha Rao', status: 'Delivered', sent_at: cmp.created_at, opened_at: null, clicked_at: null, events: [] },
+          { email: 'meera.kulkarni@example.org', name: 'Meera Kulkarni', status: 'Failed', sent_at: cmp.created_at, opened_at: null, clicked_at: null, failed_reason: '550 Mailbox does not exist', events: [] }
+        ];
+        setCampaignLogs(dummyLogs);
+        setView('details');
+        return;
+      }
+    }
+
     try {
       setLoading(true);
       const res = await axios.get(`${API_BASE_URL}/campaigns/${id}/recipients`);
@@ -319,6 +375,10 @@ const Campaigns = () => {
   };
 
   const deleteCampaign = async (id) => {
+    if (isDemoMode) {
+      showNotification("Demo Mode Active: Deletion is disabled to protect demo consistency.");
+      return;
+    }
     const targetId = id || deleteConfirmId;
     if (!targetId) return;
 
@@ -337,6 +397,36 @@ const Campaigns = () => {
 
   const handleSubmit = async (e, isDraft = false) => {
     if (e) e.preventDefault();
+    if (isDemoMode) {
+      if (!formData.campaign_name.trim() || !formData.subjects.trim()) {
+        alert('Please fill in campaign name and subject line.');
+        return;
+      }
+      const newCmp = addDemoCampaign({
+        campaign_name: formData.campaign_name,
+        subject: formData.subjects,
+        preheader: formData.preheader,
+        body: formData.body,
+        emails: formData.emails,
+        is_draft: isDraft,
+        scheduled_at: formData.is_scheduled ? formData.scheduled_at : null
+      });
+      showNotification(`Demo only — no emails were sent. Campaign "${newCmp.name}" saved in-memory.`);
+      setFormData({ 
+        campaign_name: '', 
+        subjects: '', 
+        preheader: '',
+        body: '', 
+        emails: '', 
+        is_scheduled: false, 
+        scheduled_at: '',
+        draft_id: null
+      });
+      setFile(null);
+      setView('list');
+      return;
+    }
+
     try {
       // Frontend validation: if scheduling is enabled, ensure the date is valid and in the future
       if (!isDraft && formData.is_scheduled) {
@@ -453,46 +543,81 @@ const Campaigns = () => {
       </header>
 
       {view === 'list' ? (
-        <div className="glass-panel" style={{ padding: '0', overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto', width: '100%' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ 
-                  borderBottom: '1px solid var(--border-light)', 
-                  background: 'rgba(255, 255, 255, 0.02)',
-                  color: 'var(--text-muted)', 
-                  fontSize: '0.75rem', 
-                  textTransform: 'uppercase', 
-                  letterSpacing: '0.05em' 
-                }}>
-                  <th style={{ padding: '16px 12px 16px 24px', width: '56px', minWidth: '56px' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={campaigns.length > 0 && selectedIds.length === campaigns.length} 
-                      onChange={toggleSelectAll}
-                      style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: 'var(--primary)', verticalAlign: 'middle' }}
-                    />
-                  </th>
-                  <th style={{ padding: '16px 14px', minWidth: '180px' }}>Campaign Details</th>
-                  <th style={{ padding: '16px 14px', minWidth: '110px' }}>Status</th>
-                  <th style={{ padding: '16px 14px', minWidth: '160px', width: '180px' }}>Progress</th>
-                  <th style={{ padding: '16px 14px', minWidth: '190px' }}>Timeline</th>
-                  <th style={{ padding: '16px 14px', minWidth: '200px' }}>Engagement</th>
-                  <th style={{ padding: '16px 24px 16px 14px', textAlign: 'right', minWidth: '240px' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {campaigns.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" style={{ padding: '3.5rem 2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                      No campaigns found. Start by creating your first outreach!
-                    </td>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* Search & Filter Controls */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: '260px', maxWidth: '420px' }}>
+              <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', pointerEvents: 'none' }} />
+              <input
+                type="text"
+                placeholder="Search campaigns by name or subject..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="premium-input"
+                style={{ paddingLeft: '40px', fontSize: '0.86rem' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Filter size={15} style={{ color: 'var(--text-dim)' }} />
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Status Filter:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                style={{ width: 'auto', padding: '7px 12px', fontSize: '0.82rem', background: 'var(--bg-surface-elevated)' }}
+              >
+                <option value="all">All Campaigns ({isDemoMode ? demoCampaigns.length : campaigns.length})</option>
+                <option value="completed">Completed</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="draft">Drafts</option>
+                <option value="failed">Failed (Demo)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="glass-panel" style={{ padding: '0', overflow: 'hidden' }}>
+            <div style={{ overflowX: 'auto', width: '100%' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ 
+                    borderBottom: '1px solid var(--border-light)', 
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    color: 'var(--text-muted)', 
+                    fontSize: '0.75rem', 
+                    textTransform: 'uppercase', 
+                    letterSpacing: '0.05em' 
+                  }}>
+                    <th style={{ padding: '16px 12px 16px 24px', width: '56px', minWidth: '56px' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={displayedCampaigns.length > 0 && selectedIds.length === displayedCampaigns.length} 
+                        onChange={() => {
+                          if (selectedIds.length === displayedCampaigns.length) setSelectedIds([]);
+                          else setSelectedIds(displayedCampaigns.map(c => c._id));
+                        }}
+                        style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: 'var(--primary)', verticalAlign: 'middle' }}
+                      />
+                    </th>
+                    <th style={{ padding: '16px 14px', minWidth: '180px' }}>Campaign Details</th>
+                    <th style={{ padding: '16px 14px', minWidth: '110px' }}>Status</th>
+                    <th style={{ padding: '16px 14px', minWidth: '160px', width: '180px' }}>Progress</th>
+                    <th style={{ padding: '16px 14px', minWidth: '190px' }}>Timeline</th>
+                    <th style={{ padding: '16px 14px', minWidth: '200px' }}>Engagement</th>
+                    <th style={{ padding: '16px 24px 16px 14px', textAlign: 'right', minWidth: '240px' }}>Actions</th>
                   </tr>
-                ) : campaigns.map(c => {
-                  const t = getTimelineInfo(c);
-                  return (
-                    <tr key={c._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', background: selectedIds.includes(c._id) ? 'rgba(16, 185, 129, 0.06)' : 'transparent', transition: 'background 0.2s ease' }}>
-                      <td style={{ padding: '16px 12px 16px 24px', width: '56px', minWidth: '56px' }}>
+                </thead>
+                <tbody>
+                  {displayedCampaigns.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" style={{ padding: '3.5rem 2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        No campaigns found matching current filters.
+                      </td>
+                    </tr>
+                  ) : displayedCampaigns.map(c => {
+                    const t = getTimelineInfo(c);
+                    return (
+                      <tr key={c._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', background: selectedIds.includes(c._id) ? 'rgba(16, 185, 129, 0.06)' : 'transparent', transition: 'background 0.2s ease' }}>
+                        <td style={{ padding: '16px 12px 16px 24px', width: '56px', minWidth: '56px' }}>
                         <input 
                           type="checkbox" 
                           checked={selectedIds.includes(c._id)} 
@@ -623,7 +748,8 @@ const Campaigns = () => {
             </table>
           </div>
         </div>
-      ) : view === 'details' ? (
+      </div>
+    ) : view === 'details' ? (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-panel" style={{ padding: '1.5rem' }}>
           
           {stats && (
@@ -779,7 +905,7 @@ const Campaigns = () => {
                     className="premium-input"
                     value={formData.campaign_name}
                     onChange={(e) => setFormData({...formData, campaign_name: e.target.value})}
-                    placeholder="e.g. Q4 Logistics Update - Global"
+                    placeholder="e.g. October Feature Release & Product Announcement"
                     required
                   />
                 </div>
@@ -796,7 +922,7 @@ const Campaigns = () => {
                     className="premium-input"
                     value={formData.subjects}
                     onChange={(e) => setFormData({...formData, subjects: e.target.value})}
-                    placeholder="Important Shipment Update&#10;Action Required: Your Delivery Status&#10;Logistics Notification"
+                    placeholder="Introducing Ashmyra MailFlow: Smarter Email Campaigns&#10;Exclusive Feature Preview: Take Your Outreach Further&#10;New Product Updates & Insights"
                     required
                   />
                 </div>

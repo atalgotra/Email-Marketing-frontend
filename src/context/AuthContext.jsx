@@ -7,14 +7,20 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [settings, setSettings] = useState({ app_name: 'ZipReach' });
+  const defaultSettings = {
+    app_name: 'Ashmyra MailFlow',
+    company_name: 'Ashmyra Technologies',
+    tagline: 'Create. Schedule. Send. Measure.',
+    attribution: 'A Product by Ashmyra Technologies'
+  };
+  const [settings, setSettings] = useState(defaultSettings);
 
   const fetchSettings = async () => {
     try {
       const res = await axios.get(`${API_BASE_URL}/config/general`);
-      if (res.data) {
-        setSettings(res.data);
-        document.title = `${res.data.app_name} | Enterprise Communication`;
+      if (res.data && Object.keys(res.data).length > 0) {
+        setSettings(prev => ({ ...prev, ...res.data }));
+        document.title = `${res.data.app_name || defaultSettings.app_name} | Create. Schedule. Send. Measure.`;
       }
     } catch (err) {
       console.error('Failed to fetch settings');

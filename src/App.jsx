@@ -1,55 +1,102 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
+import DemoBanner from './components/DemoBanner';
 import Dashboard from './pages/Dashboard';
 import Campaigns from './pages/Campaigns';
+import Contacts from './pages/Contacts';
 import Templates from './pages/Templates';
+import Schedule from './pages/Schedule';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
+import Pricing from './pages/Pricing';
 import Login from './pages/Login';
 import { useAuth } from './context/AuthContext';
-import { Fireflies, LeopardEyes } from './components/ThemeElements';
+import { DemoProvider, useDemo } from './context/DemoContext';
 
-const PrivateRoute = ({ children }) => {
+const AppRoutes = () => {
   const { user, loading } = useAuth();
-  if (loading) return <div>Loading...</div>;
-  return user ? children : <Navigate to="/login" />;
-};
+  const { isDemoMode } = useDemo();
 
-function App() {
-  const { user } = useAuth();
+  if (loading) {
+    return (
+      <div style={{ 
+        height: '100vh', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        background: 'var(--bg-deep)',
+        color: 'var(--text-muted)' 
+      }}>
+        Initializing Ashmyra MailFlow...
+      </div>
+    );
+  }
+
+  const hasAccess = Boolean(user || isDemoMode);
 
   return (
-    <Router>
-      <div className="app-container" style={{ display: 'flex', minHeight: '100vh' }}>
-        <LeopardEyes top="30%" right="15%" />
-        <LeopardEyes top="65%" left="10%" scale={0.6} delayOffset={1.5} />
-        <LeopardEyes top="15%" left="35%" scale={0.4} delayOffset={3.2} />
-        <LeopardEyes bottom="20%" right="25%" scale={0.5} delayOffset={2.1} />
-        <Fireflies />
-        <div className="blob blob-1"></div>
-        <div className="blob blob-2"></div>
-        {user && <Sidebar />}
-        <main style={{ 
-          flex: 1, 
-          minWidth: 0,
-          maxWidth: user ? 'calc(100vw - 260px)' : '100vw',
-          width: user ? 'calc(100vw - 260px)' : '100vw',
-          padding: user ? '2rem' : '0', 
-          marginLeft: user ? '260px' : '0',
-          boxSizing: 'border-box',
-          background: 'transparent' 
-        }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-deep)' }}>
+      {/* Persistent Demo Banner across the entire application */}
+      <DemoBanner />
+
+      <div className="app-container" style={{ display: 'flex', flex: 1, minHeight: 'calc(100vh - 42px)', background: 'var(--bg-deep)' }}>
+        {hasAccess && <Sidebar />}
+        <main 
+          className="app-main"
+          style={{ 
+            flex: 1, 
+            minWidth: 0,
+            width: '100%',
+            padding: hasAccess ? '2rem 2.5rem 3.5rem 2.5rem' : '0', 
+            marginLeft: hasAccess ? '260px' : '0',
+            boxSizing: 'border-box',
+            background: 'var(--bg-deep)',
+            overflowX: 'hidden'
+          }}
+        >
           <Routes>
-            <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
-            <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-            <Route path="/campaigns" element={<PrivateRoute><Campaigns /></PrivateRoute>} />
-            <Route path="/templates" element={<PrivateRoute><Templates /></PrivateRoute>} />
-            <Route path="/analytics" element={<PrivateRoute><Analytics /></PrivateRoute>} />
-            <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
+            <Route path="/login" element={!user && !isDemoMode ? <Login /> : <Navigate to="/" replace />} />
+            <Route path="/" element={hasAccess ? <Dashboard /> : <Navigate to="/login" replace />} />
+            <Route path="/campaigns" element={hasAccess ? <Campaigns /> : <Navigate to="/login" replace />} />
+            <Route path="/contacts" element={hasAccess ? <Contacts /> : <Navigate to="/login" replace />} />
+            <Route path="/templates" element={hasAccess ? <Templates /> : <Navigate to="/login" replace />} />
+            <Route path="/schedule" element={hasAccess ? <Schedule /> : <Navigate to="/login" replace />} />
+            <Route path="/analytics" element={hasAccess ? <Analytics /> : <Navigate to="/login" replace />} />
+            <Route path="/settings" element={hasAccess ? <Settings /> : <Navigate to="/login" replace />} />
+            <Route path="/pricing" element={<Pricing />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>
+
+      <style>{`
+        @media (max-width: 900px) {
+          .mobile-header {
+            display: flex !important;
+          }
+          .app-sidebar {
+            transform: translateX(-100%);
+          }
+          .app-sidebar.open {
+            transform: translateX(0);
+          }
+          .app-main {
+            margin-left: 0 !important;
+            padding: 5rem 1.25rem 3rem 1.25rem !important;
+          }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+function App() {
+  return (
+    <Router>
+      <DemoProvider>
+        <AppRoutes />
+      </DemoProvider>
     </Router>
   );
 }
