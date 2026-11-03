@@ -7,6 +7,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ashmyra MailFlow | Create. Schedule. Send. Measure.</title>
     <meta name="description" content="Ashmyra MailFlow — enterprise email marketing and campaign-management platform by Ashmyra Technologies." />
+      <!-- Ashmyra Shared Theme Synchronizer (Zero FOUC) -->
+    <script>
+      (function() {
+        try {
+          var valid = ["gold", "obsidian", "copper", "platinum"];
+          var theme = null;
+          var params = new URLSearchParams(window.location.search);
+          var qTheme = params.get("theme");
+          if (qTheme && valid.indexOf(qTheme) !== -1) theme = qTheme;
+          if (!theme) {
+            var m = document.cookie.match(/(?:^|;\s*)ashmyra-theme=([^;]+)/);
+            if (m && m[1]) {
+              var cVal = decodeURIComponent(m[1]);
+              if (valid.indexOf(cVal) !== -1) theme = cVal;
+            }
+          }
+          if (!theme) {
+            var saved = localStorage.getItem("ashmyra-theme") || localStorage.getItem("mailflow_theme");
+            if (saved === "dark") theme = "obsidian";
+            else if (saved === "light") theme = "platinum";
+            else if (saved && valid.indexOf(saved) !== -1) theme = saved;
+          }
+          theme = theme || "gold";
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

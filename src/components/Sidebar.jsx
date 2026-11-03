@@ -23,6 +23,12 @@ const Sidebar = () => {
   const { user, logout, settings } = useAuth();
   const { isDemoMode, toggleDemoMode } = useDemo();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [localTheme, setLocalTheme] = useState(() => {
+    if (typeof document !== "undefined") {
+      return document.documentElement.getAttribute("data-theme") || "gold";
+    }
+    return "gold";
+  });
 
   const menuItems = [
     { path: '/', icon: <LayoutDashboard size={19} />, label: 'Dashboard' },
@@ -195,6 +201,46 @@ const Sidebar = () => {
               {isDemoMode ? 'Sandbox' : user?.role === 'superadmin' ? 'Root' : 'Admin'}
             </span>
           </div>
+
+          {/* Ashmyra Theme Switcher */}
+          <button
+            onClick={() => {
+              const themes = ["gold", "obsidian", "copper", "platinum"];
+              const current = document.documentElement.getAttribute("data-theme") || "gold";
+              const next = themes[(themes.indexOf(current) + 1) % themes.length];
+              document.documentElement.setAttribute("data-theme", next);
+              try {
+                localStorage.setItem("ashmyra-theme", next);
+                localStorage.setItem("mailflow_theme", next);
+                const isAshmyra = window.location.hostname.endsWith("ashmyra.com");
+                const domain = isAshmyra ? "; domain=.ashmyra.com" : "";
+                document.cookie = "ashmyra-theme=" + next + domain + "; path=/; max-age=31536000; SameSite=Lax";
+              } catch (e) {}
+              setLocalTheme(next);
+            }}
+            type="button"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "8px",
+              padding: "7px 10px",
+              width: "100%",
+              marginBottom: "8px",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--border-light)",
+              background: "var(--bg-surface-elevated)",
+              fontSize: "0.80rem",
+              color: "var(--text-secondary)",
+              cursor: "pointer"
+            }}
+          >
+            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span>{localTheme === "obsidian" ? "🌌" : (localTheme === "copper" ? "🏺" : (localTheme === "platinum" ? "🪞" : "🏛️"))}</span>
+              <span style={{ fontWeight: 600, textTransform: "capitalize" }}>{localTheme} Theme</span>
+            </span>
+            <span style={{ fontSize: "0.7rem", color: "var(--primary)", fontWeight: 600 }}>Switch</span>
+          </button>
 
           {user ? (
             <button 
